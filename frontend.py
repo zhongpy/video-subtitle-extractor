@@ -5,6 +5,8 @@ from tqdm import tqdm
 from threading import Thread
 import time  # 示例前端处理用
 import shutil  # 用于复制文件
+from pathlib import Path
+from main import SubtitleExtractor  # 导入字幕提取模块的核心类
 
 # 配置
 SOURCE_FOLDER = r'D:\BaiduNetdiskDownload'  # 输入源文件夹（绝对路径）
@@ -14,10 +16,9 @@ TARGET_FOLDER = r'D:\Temp'  # 后端处理的目标文件夹（绝对路径）
 CURRENT_DIR = os.getcwd()
 PROCESSED_RECORD = os.path.join(CURRENT_DIR, 'processed.json')  # 后端已处理记录文件
 FAILED_LOG = os.path.join(CURRENT_DIR, 'failed.log')  # 后端处理失败日志文件
-
-# 前端处理相关配置
 FRONTEND_PROCESSED_FOLDER = os.path.join(CURRENT_DIR, 'FrontendProcessed')  # 前端处理结果文件夹
 FRONTEND_PROCESSED_RECORD = os.path.join(CURRENT_DIR, 'frontend_processed.json')  # 前端已处理记录文件
+SUBTITLE_RECORD = os.path.join(CURRENT_DIR, 'subtitle_processed.json')  # 字幕提取记录文件
 
 API_URL = 'http://127.0.0.1:5000/process'  # 后端 API 地址
 
@@ -99,6 +100,41 @@ def frontend_process(video_list, frontend_processed_files):
             print(f"[Frontend] Error processing {unique_id}: {str(e)}")
     print("[Frontend] Frontend processing complete.")
 
+# 字幕提取逻辑
+def extract_subtitles(video_list, subtitle_processed_files):
+    """
+    对视频列表进行字幕提取。
+    """
+    print("[Frontend] Starting subtitle extraction...")
+    for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
+        if unique_id in subtitle_processed_files:
+            print(f"[Frontend] Skipping {unique_id}, already processed.")
+            continue
+        try:
+            # 提取字幕
+            video_name = Path(file_path).stem
+            series_name = Path(file_path).parent.name
+            output_path = os.path.join(TARGET_FOLDER, "Subtitle", series_name, "zh_hans")
+            os.makedirs(output_path, exist_ok=True)
+
+            # 使用 SubtitleExtractor 进行提取
+            subtitle_extractor = SubtitleExtractor(file_path)
+            subtitle_extractor.run()
+
+            # 移动字幕文件到目标目录
+            raw_srt_file = os.path.join(os.path.splitext(file_path)[0] + ".srt")
+            if os.path.exists(raw_srt_file):
+                target_srt_path = os.path.join(output_path, f"{video_name}.srt")
+                shutil.move(raw_srt_file, target_srt_path)
+                print(f"[Frontend] Subtitle saved to: {target_srt_path}")
+                subtitle_processed_files.add(unique_id)
+                save_processed_record(SUBTITLE_RECORD, subtitle_processed_files)
+            else:
+                print(f"[Frontend] No subtitle generated for: {file_path}")
+        except Exception as e:
+            print(f"[Frontend] Error extracting subtitles for {file_path}: {str(e)}")
+    print("[Frontend] Subtitle extraction complete.")
+
 # 处理后端发送逻辑
 def backend_process(video_list, backend_processed_files):
     """
@@ -150,18 +186,22 @@ if __name__ == '__main__':
     # 加载处理记录
     backend_processed_files = load_processed_record(PROCESSED_RECORD)
     frontend_processed_files = load_processed_record(FRONTEND_PROCESSED_RECORD)
+    subtitle_processed_files = load_processed_record(SUBTITLE_RECORD)
 
     # 获取待处理文件列表
     video_list = get_video_list()
 
-    # 启动前端和后端的独立线程
-    frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
+    # 启动前端、字幕提取和后端的独立线程
+    #frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
+    subtitle_thread = Thread(target=extract_subtitles, args=(video_list, subtitle_processed_files))
     backend_thread = Thread(target=backend_process, args=(video_list, backend_processed_files))
 
-    frontend_thread.start()
+    #frontend_thread.start()
+    subtitle_thread.start()
     backend_thread.start()
 
-    frontend_thread.join()
+    #frontend_thread.join()
+    subtitle_thread.join()
     backend_thread.join()
 
     print("All processing complete.")
