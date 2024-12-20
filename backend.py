@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, send_file
 import os
 import shutil
+from backend.main import SubtitleRemover  # 导入SubtitleRemover类
 
 app = Flask(__name__)
 
@@ -9,8 +10,18 @@ def process_video(video_path, output_path):
     """
     模拟处理视频的函数，将视频从输入路径复制到输出路径。
     """
+    subtitle_remover = SubtitleRemover(video_path)
+    subtitle_remover.run()
+
+    # 获取处理后的视频路径
+    processed_video_path = subtitle_remover.video_out_name
+
+    # 确保处理后的视频存在
+    if not os.path.exists(processed_video_path):
+        raise FileNotFoundError("Subtitle removal failed. Processed file not found.")
+
     # 这里可以添加实际的视频处理逻辑
-    shutil.copyfile(video_path, output_path)
+    shutil.copyfile(processed_video_path, output_path)
 
 @app.route('/process', methods=['POST'])
 def process():
