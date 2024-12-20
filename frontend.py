@@ -115,11 +115,7 @@ def extract_subtitles(video_list, subtitle_processed_files):
     对视频列表进行字幕提取。
     """
     print("[Frontend] Starting subtitle extraction...")
-    subtitle_area = None
-    try:
-        subtitle_area=(0.64375, 0.1625, 0.0, 1.0)
-    except ValueError as e:
-        subtitle_area = None
+    subtitle_area=(0.64375, 0.1625, 0.0, 1.0)
     for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
         if STOP_EVENT.is_set():  # 检查是否收到停止信号
             print("[Frontend] Subtitle extraction interrupted.")

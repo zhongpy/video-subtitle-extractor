@@ -12,24 +12,23 @@ os.makedirs(TEMP_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FOLDER, exist_ok=True)
 
 
-def compress_video(input_path, output_path, target_bitrate="1000k"):
+def compress_video(input_path, output_path, target_size_mb=20, resolution=(720, 1280), fps=30):
     """
     使用 moviepy 压缩视频。
-    :param input_path: 输入视频路径
-    :param output_path: 输出压缩后的视频路径
-    :param target_bitrate: 目标比特率，默认为 1000k。
     """
     try:
-        # 打开视频文件
         clip = VideoFileClip(input_path)
+        duration_seconds = clip.duration
+        target_bitrate = (target_size_mb * 8 * 1024 * 1024) / duration_seconds
+        target_bitrate = f"{int(target_bitrate / 1000)}k"
 
-        # 使用 write_videofile 方法指定目标比特率进行压缩
-        clip.write_videofile(
+        resized_clip = clip.resize(height=resolution[1]).set_fps(fps)
+        resized_clip.write_videofile(
             output_path,
-            codec="libx264",  # 使用 H.264 编码
+            codec="libx264",
+            audio_codec="aac",
             bitrate=target_bitrate,
-            audio_codec="aac",  # 保留音频
-            preset="medium"  # 速度/质量平衡
+            preset="medium"
         )
         clip.close()
     except Exception as e:
@@ -38,23 +37,18 @@ def compress_video(input_path, output_path, target_bitrate="1000k"):
 
 def process_video(video_path, output_path):
     """
-    使用 SubtitleRemover 处理视频，完成字幕移除并压缩视频。
+    使用 SubtitleRemover 处理视频，并进行压缩。
     """
-    subtitle_remover = SubtitleRemover(video_path)
+    subtitle_area=(0.64375, 0.1625, 0.0, 1.0)
+    subtitle_remover = SubtitleRemover(video_path,subtitle_area)
     subtitle_remover.run()
 
-    # 获取处理后的视频路径
     processed_video_path = subtitle_remover.video_out_name
-
-    # 确保处理后的视频存在
     if not os.path.exists(processed_video_path):
         raise FileNotFoundError("Subtitle removal failed. Processed file not found.")
 
-    # 添加压缩步骤
-    compressed_video_path = output_path  # 直接将压缩结果写入输出路径
-    compress_video(processed_video_path, compressed_video_path)
-
-    return compressed_video_path
+    compress_video(processed_video_path, output_path, target_size_mb=20, resolution=(720, 1280), fps=30)
+    return output_path
 
 
 @app.route('/process', methods=['POST'])
