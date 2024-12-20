@@ -6,10 +6,11 @@ from threading import Thread
 import time  # 示例前端处理用
 import shutil  # 用于复制文件
 from pathlib import Path
-from main import SubtitleExtractor  # 导入字幕提取模块的核心类
+from backend.main import SubtitleExtractor  # 导入字幕提取模块的核心类
+import configparser
 
 # 配置
-SOURCE_FOLDER = r'D:\BaiduNetdiskDownload'  # 输入源文件夹（绝对路径）
+SOURCE_FOLDER = r'D:\BaiduNetdiskDownload\补三部241101'  # 输入源文件夹（绝对路径）
 TARGET_FOLDER = r'D:\Temp'  # 后端处理的目标文件夹（绝对路径）
 
 # 当前运行目录中的记录文件
@@ -19,6 +20,8 @@ FAILED_LOG = os.path.join(CURRENT_DIR, 'failed.log')  # 后端处理失败日志
 FRONTEND_PROCESSED_FOLDER = os.path.join(CURRENT_DIR, 'FrontendProcessed')  # 前端处理结果文件夹
 FRONTEND_PROCESSED_RECORD = os.path.join(CURRENT_DIR, 'frontend_processed.json')  # 前端已处理记录文件
 SUBTITLE_RECORD = os.path.join(CURRENT_DIR, 'subtitle_processed.json')  # 字幕提取记录文件
+
+SUBTITLE_CONFIG=os.path.join(CURRENT_DIR, 'subtitle.ini') #字幕区域配置
 
 API_URL = 'http://127.0.0.1:5000/process'  # 后端 API 地址
 
@@ -106,6 +109,11 @@ def extract_subtitles(video_list, subtitle_processed_files):
     对视频列表进行字幕提取。
     """
     print("[Frontend] Starting subtitle extraction...")
+    subtitle_area = None
+    try:
+        subtitle_area=(0.64375, 0.1625, 0.0, 1.0)
+    except ValueError as e:
+        subtitle_area = None
     for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
         if unique_id in subtitle_processed_files:
             print(f"[Frontend] Skipping {unique_id}, already processed.")
@@ -118,7 +126,7 @@ def extract_subtitles(video_list, subtitle_processed_files):
             os.makedirs(output_path, exist_ok=True)
 
             # 使用 SubtitleExtractor 进行提取
-            subtitle_extractor = SubtitleExtractor(file_path)
+            subtitle_extractor = SubtitleExtractor(file_path,subtitle_area)
             subtitle_extractor.run()
 
             # 移动字幕文件到目标目录
