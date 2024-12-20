@@ -28,6 +28,9 @@ API_URL = 'http://127.0.0.1:5000/process'  # 后端 API 地址
 # 支持的扩展名（常见视频格式）
 VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv'}
 
+# 停止事件，用于安全关闭线程
+STOP_EVENT = Event()
+
 # 初始化已处理记录文件
 def load_processed_record(record_file):
     """
@@ -83,6 +86,9 @@ def frontend_process(video_list, frontend_processed_files):
     """
     print("[Frontend] Starting frontend processing...")
     for unique_id, file_path, _, frontend_processed_path in video_list:
+        if STOP_EVENT.is_set():  # 检查是否收到停止信号
+            print("[Frontend] frontend_process extraction interrupted.")
+            break
         if unique_id in frontend_processed_files:
             print(f"[Frontend] Skipping {unique_id}, already processed.")
             continue
@@ -115,6 +121,9 @@ def extract_subtitles(video_list, subtitle_processed_files):
     except ValueError as e:
         subtitle_area = None
     for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
+        if STOP_EVENT.is_set():  # 检查是否收到停止信号
+            print("[Frontend] Subtitle extraction interrupted.")
+            break
         if unique_id in subtitle_processed_files:
             print(f"[Frontend] Skipping {unique_id}, already processed.")
             continue
@@ -153,6 +162,9 @@ def backend_process(video_list, backend_processed_files):
 
     with tqdm(total=total_videos, desc='Backend Processing') as pbar:
         for unique_id, file_path, target_file_path, _ in video_list:
+            if STOP_EVENT.is_set():  # 检查是否收到停止信号
+                print("[Backend] Backend processing interrupted.")
+                break
             if unique_id in backend_processed_files:
                 pbar.update(1)
                 pbar.set_postfix({'Status': f"Skipped {unique_id}"})
@@ -187,29 +199,36 @@ def backend_process(video_list, backend_processed_files):
     print("[Backend] Backend processing complete.")
 
 if __name__ == '__main__':
-    # 确保目标文件夹存在
-    os.makedirs(TARGET_FOLDER, exist_ok=True)
-    os.makedirs(FRONTEND_PROCESSED_FOLDER, exist_ok=True)
+    try:
+        # 确保目标文件夹存在
+        os.makedirs(TARGET_FOLDER, exist_ok=True)
+        os.makedirs(FRONTEND_PROCESSED_FOLDER, exist_ok=True)
 
-    # 加载处理记录
-    backend_processed_files = load_processed_record(PROCESSED_RECORD)
-    frontend_processed_files = load_processed_record(FRONTEND_PROCESSED_RECORD)
-    subtitle_processed_files = load_processed_record(SUBTITLE_RECORD)
+        # 加载处理记录
+        backend_processed_files = load_processed_record(PROCESSED_RECORD)
+        frontend_processed_files = load_processed_record(FRONTEND_PROCESSED_RECORD)
+        subtitle_processed_files = load_processed_record(SUBTITLE_RECORD)
 
-    # 获取待处理文件列表
-    video_list = get_video_list()
+        # 获取待处理文件列表
+        video_list = get_video_list()
 
-    # 启动前端、字幕提取和后端的独立线程
-    #frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
-    subtitle_thread = Thread(target=extract_subtitles, args=(video_list, subtitle_processed_files))
-    backend_thread = Thread(target=backend_process, args=(video_list, backend_processed_files))
+        # 启动前端、字幕提取和后端的独立线程
+        #frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
+        subtitle_thread = Thread(target=extract_subtitles, args=(video_list, subtitle_processed_files))
+        backend_thread = Thread(target=backend_process, args=(video_list, backend_processed_files))
 
-    #frontend_thread.start()
-    subtitle_thread.start()
-    backend_thread.start()
+        #frontend_thread.start()
+        subtitle_thread.start()
+        backend_thread.start()
 
-    #frontend_thread.join()
-    subtitle_thread.join()
-    backend_thread.join()
+        #frontend_thread.join()
+        subtitle_thread.join()
+        backend_thread.join()
 
-    print("All processing complete.")
+        print("All processing complete.")
+    except KeyboardInterrupt:
+        print("\n[Main] Interrupt received. Stopping all processes...")
+        STOP_EVENT.set()
+        subtitle_thread.join()
+        backend_thread.join()
+        print("[Main] All processes stopped.")
