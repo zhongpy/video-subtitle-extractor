@@ -37,14 +37,20 @@ def process():
     try:
         # 调用处理函数
         process_video(input_path, output_path)
+
+        # 将处理后的文件发送给客户端
+        response = send_file(output_path, as_attachment=True)
+
+        # 清理处理后的文件
+        os.remove(output_path)
+
+        return response
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         # 清理临时文件
         if os.path.exists(input_path):
             os.remove(input_path)
-
-    return send_file(output_path, as_attachment=True)
 
 if __name__ == '__main__':
     # 确保启动前清理并创建必要的文件夹

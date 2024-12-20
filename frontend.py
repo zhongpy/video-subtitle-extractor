@@ -2,15 +2,22 @@ import os
 import requests
 import json
 from tqdm import tqdm
+from threading import Thread
+import time  # 示例前端处理用
+import shutil  # 用于复制文件
 
 # 配置
 SOURCE_FOLDER = r'D:\BaiduNetdiskDownload'  # 输入源文件夹（绝对路径）
-TARGET_FOLDER = r'D:\Temp'  # 目标文件夹（绝对路径）
+TARGET_FOLDER = r'D:\Temp'  # 后端处理的目标文件夹（绝对路径）
 
 # 当前运行目录中的记录文件
 CURRENT_DIR = os.getcwd()
-PROCESSED_RECORD = os.path.join(CURRENT_DIR, 'processed.json')  # 已处理记录文件
-FAILED_LOG = os.path.join(CURRENT_DIR, 'failed.log')  # 处理失败日志文件
+PROCESSED_RECORD = os.path.join(CURRENT_DIR, 'processed.json')  # 后端已处理记录文件
+FAILED_LOG = os.path.join(CURRENT_DIR, 'failed.log')  # 后端处理失败日志文件
+
+# 前端处理相关配置
+FRONTEND_PROCESSED_FOLDER = os.path.join(CURRENT_DIR, 'FrontendProcessed')  # 前端处理结果文件夹
+FRONTEND_PROCESSED_RECORD = os.path.join(CURRENT_DIR, 'frontend_processed.json')  # 前端已处理记录文件
 
 API_URL = 'http://127.0.0.1:5000/process'  # 后端 API 地址
 
@@ -18,21 +25,21 @@ API_URL = 'http://127.0.0.1:5000/process'  # 后端 API 地址
 VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv'}
 
 # 初始化已处理记录文件
-def load_processed_record():
+def load_processed_record(record_file):
     """
-    加载已处理的文件记录。
+    加载处理记录文件。
     """
-    if os.path.exists(PROCESSED_RECORD):
-        with open(PROCESSED_RECORD, 'r') as f:
+    if os.path.exists(record_file):
+        with open(record_file, 'r') as f:
             return set(json.load(f))
     else:
         return set()
 
-def save_processed_record(processed_files):
+def save_processed_record(record_file, processed_files):
     """
-    保存已处理的文件记录。
+    保存处理记录文件。
     """
-    with open(PROCESSED_RECORD, 'w') as f:
+    with open(record_file, 'w') as f:
         json.dump(list(processed_files), f)
 
 # 初始化失败日志文件
@@ -61,30 +68,51 @@ def get_video_list():
             unique_id = os.path.join(series_name, file_name)
             file_path = os.path.join(root, file_name)
             target_path = os.path.join(TARGET_FOLDER, relative_path, file_name)
-            video_list.append((unique_id, file_path, target_path))
+            frontend_processed_path = os.path.join(FRONTEND_PROCESSED_FOLDER, relative_path, file_name)
+            video_list.append((unique_id, file_path, target_path, frontend_processed_path))
     return video_list
 
-# 遍历源文件夹并调用 API
-def process_videos():
+# 模拟前端处理模块
+def frontend_process(video_list, frontend_processed_files):
     """
-    遍历文件夹处理视频文件，显示进度条并记录失败日志。
+    独立线程：处理前端视频文件。
     """
-    processed_files = load_processed_record()
-    video_list = get_video_list()
+    print("[Frontend] Starting frontend processing...")
+    for unique_id, file_path, _, frontend_processed_path in video_list:
+        if unique_id in frontend_processed_files:
+            print(f"[Frontend] Skipping {unique_id}, already processed.")
+            continue
+        try:
+            # 确保目标文件夹存在
+            os.makedirs(os.path.dirname(frontend_processed_path), exist_ok=True)
+
+            # 模拟前端处理逻辑
+            print(f"[Frontend] Processing {file_path}...")
+            time.sleep(2)  # 模拟耗时
+            shutil.copy(file_path, frontend_processed_path)  # 示例操作：复制文件
+
+            # 标记为已处理
+            frontend_processed_files.add(unique_id)
+            save_processed_record(FRONTEND_PROCESSED_RECORD, frontend_processed_files)
+            print(f"[Frontend] Saved processed video to {frontend_processed_path}")
+        except Exception as e:
+            print(f"[Frontend] Error processing {unique_id}: {str(e)}")
+    print("[Frontend] Frontend processing complete.")
+
+# 处理后端发送逻辑
+def backend_process(video_list, backend_processed_files):
+    """
+    独立线程：发送视频文件到后端。
+    """
+    print("[Backend] Starting backend processing...")
     total_videos = len(video_list)
 
-    if not os.path.exists(SOURCE_FOLDER):
-        print(f"Source folder '{SOURCE_FOLDER}' does not exist.")
-        return
-
-    # 使用 tqdm 显示进度条
-    with tqdm(total=total_videos, desc='Processing videos') as pbar:
-        for unique_id, file_path, target_file_path in video_list:
-            if unique_id in processed_files:
+    with tqdm(total=total_videos, desc='Backend Processing') as pbar:
+        for unique_id, file_path, target_file_path, _ in video_list:
+            if unique_id in backend_processed_files:
                 pbar.update(1)
                 pbar.set_postfix({'Status': f"Skipped {unique_id}"})
                 continue
-
             try:
                 # 确保目标文件夹存在
                 os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
@@ -98,8 +126,8 @@ def process_videos():
                     with open(target_file_path, 'wb') as f_out:
                         f_out.write(response.content)
 
-                    processed_files.add(unique_id)
-                    save_processed_record(processed_files)
+                    backend_processed_files.add(unique_id)
+                    save_processed_record(PROCESSED_RECORD, backend_processed_files)
                     pbar.set_postfix({'Status': f"Processed {unique_id}"})
                 else:
                     error_message = response.json().get('error', 'Unknown error')
@@ -112,10 +140,28 @@ def process_videos():
 
             pbar.update(1)
 
-    print("All files processed.")
+    print("[Backend] Backend processing complete.")
 
 if __name__ == '__main__':
     # 确保目标文件夹存在
     os.makedirs(TARGET_FOLDER, exist_ok=True)
-    print(f"Processing videos in '{SOURCE_FOLDER}'...")
-    process_videos()
+    os.makedirs(FRONTEND_PROCESSED_FOLDER, exist_ok=True)
+
+    # 加载处理记录
+    backend_processed_files = load_processed_record(PROCESSED_RECORD)
+    frontend_processed_files = load_processed_record(FRONTEND_PROCESSED_RECORD)
+
+    # 获取待处理文件列表
+    video_list = get_video_list()
+
+    # 启动前端和后端的独立线程
+    frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
+    backend_thread = Thread(target=backend_process, args=(video_list, backend_processed_files))
+
+    frontend_thread.start()
+    backend_thread.start()
+
+    frontend_thread.join()
+    backend_thread.join()
+
+    print("All processing complete.")
