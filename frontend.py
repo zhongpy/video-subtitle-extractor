@@ -246,8 +246,8 @@ if __name__ == '__main__':
         backend_thread.start()
 
         #frontend_thread.join()
-        #subtitle_thread.join()
-        #backend_thread.join()
+        subtitle_thread.join()
+        backend_thread.join()
 
         print("All processing complete.")
     except KeyboardInterrupt:
