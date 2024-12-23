@@ -8,6 +8,7 @@ import shutil  # 用于复制文件
 from pathlib import Path
 from backend.main import SubtitleExtractor  # 导入字幕提取模块的核心类
 import configparser
+import cv2
 
 # 配置
 SOURCE_FOLDER = r'D:\BaiduNetdiskDownload\补三部241101'  # 输入源文件夹（绝对路径）
@@ -116,6 +117,11 @@ def extract_subtitles(video_list, subtitle_processed_files):
     对视频列表进行字幕提取。
     """
     print("[Frontend] Starting subtitle extraction...")
+    # 假设输入比例值
+    y_p = 0.64375  # ymin 相对于 frame_height 的比例
+    h_p = 0.19166  # (ymax - ymin) 相对于 frame_height 的比例
+    x_p = 0.0  # xmin 相对于 frame_width 的比例
+    w_p = 1.0  # (xmax - xmin) 相对于 frame_width 的比例
     subtitle_area=(0.64375, 0.19166, 0.0, 1.0)
     for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
         if STOP_EVENT.is_set():  # 检查是否收到停止信号
@@ -124,6 +130,27 @@ def extract_subtitles(video_list, subtitle_processed_files):
         if unique_id in subtitle_processed_files:
             print(f"[Frontend] Skipping {unique_id}, already processed.")
             continue
+        video_cap = cv2.VideoCapture(file_path)
+        if video_cap is None:
+            continue
+        if video_cap.isOpened():
+            ret, frame = video_cap.read()
+            frame_height = video_cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                    # 获取视频的宽度
+            frame_width = video_cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+            # 将比例转换为像素
+            ymin = int(y_p * frame_height)
+            ymax = int((y_p + h_p) * frame_height)
+            xmin = int(x_p * frame_width)
+            xmax = int((x_p + w_p) * frame_width)
+
+            # 确保 ymax 和 xmax 不超过帧的边界
+            if ymax > frame_height:
+                ymax = frame_height
+            if xmax > frame_width:
+                xmax = frame_width
+            subtitle_area=(ymin,ymax,xmin,xmax)
+            video_cap.release()
         try:
             # 提取字幕
             video_name = Path(file_path).stem
