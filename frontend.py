@@ -109,6 +109,7 @@ def frontend_process(video_list, frontend_processed_files):
             print(f"[Frontend] Error processing {unique_id}: {str(e)}")
     print("[Frontend] Frontend processing complete.")
 
+global_SubExtractor = None
 # 字幕提取逻辑
 def extract_subtitles(video_list, subtitle_processed_files):
     """
@@ -131,9 +132,9 @@ def extract_subtitles(video_list, subtitle_processed_files):
             os.makedirs(output_path, exist_ok=True)
 
             # 使用 SubtitleExtractor 进行提取
-            subtitle_extractor = SubtitleExtractor(file_path,subtitle_area)
-            subtitle_extractor.run()
-            subtitle_extractor.completed_event.wait()
+            global_SubExtractor = SubtitleExtractor(file_path,subtitle_area)
+            global_SubExtractor.run()
+            global_SubExtractor.completed_event.wait()
             # 移动字幕文件到目标目录
             raw_srt_file = os.path.join(os.path.splitext(file_path)[0] + ".srt")
             if os.path.exists(raw_srt_file):
@@ -210,7 +211,7 @@ if __name__ == '__main__':
 
         # 启动前端、字幕提取和后端的独立线程
         #frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
-        subtitle_thread = Thread(target=extract_subtitles, args=(video_list, subtitle_processed_files))
+        subtitle_thread = Thread(target=extract_subtitles,daemon=True, args=(video_list, subtitle_processed_files))
         backend_thread = Thread(target=backend_process, args=(video_list, backend_processed_files))
 
         #frontend_thread.start()
@@ -218,8 +219,8 @@ if __name__ == '__main__':
         backend_thread.start()
 
         #frontend_thread.join()
-        subtitle_thread.join()
-        backend_thread.join()
+        #subtitle_thread.join()
+        #backend_thread.join()
 
         print("All processing complete.")
     except KeyboardInterrupt:
