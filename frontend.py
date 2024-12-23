@@ -2,7 +2,7 @@ import os
 import requests
 import json
 from tqdm import tqdm
-from threading import Thread
+from threading import Thread,Event
 import time  # 示例前端处理用
 import shutil  # 用于复制文件
 from pathlib import Path
@@ -115,7 +115,7 @@ def extract_subtitles(video_list, subtitle_processed_files):
     对视频列表进行字幕提取。
     """
     print("[Frontend] Starting subtitle extraction...")
-    subtitle_area=(0.64375, 0.1625, 0.0, 1.0)
+    subtitle_area=(0.64375, 0.19166, 0.0, 1.0)
     for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
         if STOP_EVENT.is_set():  # 检查是否收到停止信号
             print("[Frontend] Subtitle extraction interrupted.")
@@ -133,7 +133,7 @@ def extract_subtitles(video_list, subtitle_processed_files):
             # 使用 SubtitleExtractor 进行提取
             subtitle_extractor = SubtitleExtractor(file_path,subtitle_area)
             subtitle_extractor.run()
-
+            subtitle_extractor.completed_event.wait()
             # 移动字幕文件到目标目录
             raw_srt_file = os.path.join(os.path.splitext(file_path)[0] + ".srt")
             if os.path.exists(raw_srt_file):

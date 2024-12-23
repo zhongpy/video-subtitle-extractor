@@ -118,6 +118,8 @@ class SubtitleExtractor:
         self.subtitle_ocr_progress_queue = None
         # vsf运行状态
         self.vsf_running = False
+        # 用于通知任务完成
+        self.completed_event = threading.Event()  
 
     def run(self):
         """
@@ -125,6 +127,7 @@ class SubtitleExtractor:
         """
         # 记录开始运行的时间
         start_time = time.time()
+        self.completed_event.clear()  # 重置事件
         self.lock.acquire()
         # 重置进度条
         self.update_progress(ocr=0, frame_extract=0)
@@ -193,6 +196,7 @@ class SubtitleExtractor:
         self.lock.release()
         if config.GENERATE_TXT:
             self.srt2txt(os.path.join(os.path.splitext(self.video_path)[0] + '.srt'))
+        self.completed_event.set()  # 设置任务完成事件
 
     def extract_frame_by_fps(self):
         """
