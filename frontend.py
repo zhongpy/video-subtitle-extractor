@@ -11,8 +11,8 @@ import configparser
 import cv2
 
 # 配置
-SOURCE_FOLDER = r'D:\BaiduNetdiskDownload\补三部241101'  # 输入源文件夹（绝对路径）
-TARGET_FOLDER = r'D:\Temp'  # 后端处理的目标文件夹（绝对路径）
+SOURCE_FOLDER = r'D:\BaiduNetdiskDownload\55部'  # 输入源文件夹（绝对路径）
+TARGET_FOLDER = r'E:\Temp'  # 后端处理的目标文件夹（绝对路径）
 
 # 当前运行目录中的记录文件
 CURRENT_DIR = os.getcwd()
@@ -124,11 +124,11 @@ def extract_subtitles(video_list, subtitle_processed_files):
     """
     print("[Frontend] Starting subtitle extraction...")
     # 假设输入比例值
-    y_p = 0.64375  # ymin 相对于 frame_height 的比例
-    h_p = 0.19166  # (ymax - ymin) 相对于 frame_height 的比例
+    y_p = 0.6  # ymin 相对于 frame_height 的比例
+    h_p = 0.35  # (ymax - ymin) 相对于 frame_height 的比例
     x_p = 0.0  # xmin 相对于 frame_width 的比例
     w_p = 1.0  # (xmax - xmin) 相对于 frame_width 的比例
-    subtitle_area=(0.64375, 0.19166, 0.0, 1.0)
+    subtitle_area=(0.6, 0.35, 0.0, 1.0)
     for unique_id, file_path, _, _ in tqdm(video_list, desc="Subtitle Extraction"):
         if STOP_EVENT.is_set():  # 检查是否收到停止信号
             print("[Frontend] Subtitle extraction interrupted.")
@@ -191,7 +191,7 @@ def backend_process(video_list, backend_processed_files, api_url):
     total_videos = len(video_list)
 
     with tqdm(total=total_videos, desc=f'Processing with {api_url}') as pbar:
-        for unique_id, file_path, target_file_path in video_list:
+        for unique_id, file_path, target_file_path, _ in video_list:
             if STOP_EVENT.is_set():
                 print(f"[Backend] Processing with {api_url} interrupted.")
                 break
