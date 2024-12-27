@@ -181,11 +181,12 @@ def extract_subtitles(video_list, subtitle_processed_files):
         except Exception as e:
             print(f"[Frontend] Error extracting subtitles for {file_path}: {str(e)}")
     print("[Frontend] Subtitle extraction complete.")
-
+# 添加一个全局的“正在处理”缓存标志
+IN_PROGRESS_CACHE = set()
 # 后端处理逻辑
 def backend_process(video_list, backend_processed_files, api_url):
     """
-    处理指定后端服务器的任务。
+    处理指定后端服务器的任务，支持缓存以避免重复处理。
     """
     print(f"[Backend] Starting processing with {api_url}...")
     total_videos = len(video_list)
@@ -196,11 +197,14 @@ def backend_process(video_list, backend_processed_files, api_url):
                 print(f"[Backend] Processing with {api_url} interrupted.")
                 break
 
-            with PROCESS_LOCK:  # 确保对共享资源的操作是线程安全的
-                if unique_id in backend_processed_files:
+            # 检查是否已处理或正在处理
+            with PROCESS_LOCK:
+                if unique_id in backend_processed_files or unique_id in IN_PROGRESS_CACHE:
                     pbar.update(1)
                     pbar.set_postfix({'Status': f"Skipped {unique_id}"})
                     continue
+                # 标记为正在处理
+                IN_PROGRESS_CACHE.add(unique_id)
 
             try:
                 os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
@@ -213,7 +217,8 @@ def backend_process(video_list, backend_processed_files, api_url):
                     with open(target_file_path, 'wb') as f_out:
                         f_out.write(response.content)
 
-                    with PROCESS_LOCK:  # 更新已处理记录
+                    with PROCESS_LOCK:
+                        # 更新已处理记录
                         backend_processed_files.add(unique_id)
                         save_processed_record(PROCESSED_RECORD, backend_processed_files)
 
@@ -225,6 +230,11 @@ def backend_process(video_list, backend_processed_files, api_url):
             except Exception as e:
                 log_failed_video(unique_id, str(e))
                 pbar.set_postfix({'Status': f"Error {unique_id}"})
+            finally:
+                # 无论成功还是失败，都从缓存中移除
+                with PROCESS_LOCK:
+                    IN_PROGRESS_CACHE.remove(unique_id)
+
             pbar.update(1)
 
     print(f"[Backend] Processing with {api_url} complete.")
