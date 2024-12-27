@@ -2,7 +2,7 @@ import os
 import requests
 import json
 from tqdm import tqdm
-from threading import Thread,Event
+from threading import Thread, Event, Lock
 import time  # 示例前端处理用
 import shutil  # 用于复制文件
 from pathlib import Path
@@ -25,12 +25,20 @@ SUBTITLE_RECORD = os.path.join(CURRENT_DIR, 'subtitle_processed.json')  # 字幕
 SUBTITLE_CONFIG=os.path.join(CURRENT_DIR, 'subtitle.ini') #字幕区域配置
 
 API_URL = 'http://127.0.0.1:5000/process'  # 后端 API 地址
+BACKEND_SERVERS = [
+    'http://127.0.0.1:5000/process',
+    'http://192.168.31.2:5000/process'
+]
 
 # 支持的扩展名（常见视频格式）
 VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mkv', '.mov', '.wmv', '.flv'}
 
 # 停止事件，用于安全关闭线程
 STOP_EVENT = Event()
+
+# 线程锁
+PROCESS_LOCK = Lock()
+FAILED_LOCK = Lock()
 
 # 初始化已处理记录文件
 def load_processed_record(record_file):
@@ -50,13 +58,11 @@ def save_processed_record(record_file, processed_files):
     with open(record_file, 'w') as f:
         json.dump(list(processed_files), f)
 
-# 初始化失败日志文件
+# 记录失败日志
 def log_failed_video(video_id, error_message):
-    """
-    记录处理失败的视频到日志文件。
-    """
-    with open(FAILED_LOG, 'a') as f:
-        f.write(f"{video_id}: {error_message}\n")
+    with FAILED_LOCK:  # 确保线程安全
+        with open(FAILED_LOG, 'a') as f:
+            f.write(f"{video_id}: {error_message}\n")
 
 # 获取待处理的视频列表
 def get_video_list():
@@ -176,51 +182,52 @@ def extract_subtitles(video_list, subtitle_processed_files):
             print(f"[Frontend] Error extracting subtitles for {file_path}: {str(e)}")
     print("[Frontend] Subtitle extraction complete.")
 
-# 处理后端发送逻辑
-def backend_process(video_list, backend_processed_files):
+# 后端处理逻辑
+def backend_process(video_list, backend_processed_files, api_url):
     """
-    独立线程：发送视频文件到后端。
+    处理指定后端服务器的任务。
     """
-    print("[Backend] Starting backend processing...")
+    print(f"[Backend] Starting processing with {api_url}...")
     total_videos = len(video_list)
 
-    with tqdm(total=total_videos, desc='Backend Processing') as pbar:
-        for unique_id, file_path, target_file_path, _ in video_list:
-            if STOP_EVENT.is_set():  # 检查是否收到停止信号
-                print("[Backend] Backend processing interrupted.")
+    with tqdm(total=total_videos, desc=f'Processing with {api_url}') as pbar:
+        for unique_id, file_path, target_file_path in video_list:
+            if STOP_EVENT.is_set():
+                print(f"[Backend] Processing with {api_url} interrupted.")
                 break
-            if unique_id in backend_processed_files:
-                pbar.update(1)
-                pbar.set_postfix({'Status': f"Skipped {unique_id}"})
-                continue
+
+            with PROCESS_LOCK:  # 确保对共享资源的操作是线程安全的
+                if unique_id in backend_processed_files:
+                    pbar.update(1)
+                    pbar.set_postfix({'Status': f"Skipped {unique_id}"})
+                    continue
+
             try:
-                # 确保目标文件夹存在
                 os.makedirs(os.path.dirname(target_file_path), exist_ok=True)
 
                 # 调用后端 API
                 with open(file_path, 'rb') as f:
-                    response = requests.post(API_URL, files={'file': f})
+                    response = requests.post(api_url, files={'file': f})
 
                 if response.status_code == 200:
-                    # 保存处理后的视频到目标文件夹
                     with open(target_file_path, 'wb') as f_out:
                         f_out.write(response.content)
 
-                    backend_processed_files.add(unique_id)
-                    save_processed_record(PROCESSED_RECORD, backend_processed_files)
+                    with PROCESS_LOCK:  # 更新已处理记录
+                        backend_processed_files.add(unique_id)
+                        save_processed_record(PROCESSED_RECORD, backend_processed_files)
+
                     pbar.set_postfix({'Status': f"Processed {unique_id}"})
                 else:
                     error_message = response.json().get('error', 'Unknown error')
                     log_failed_video(unique_id, error_message)
                     pbar.set_postfix({'Status': f"Failed {unique_id}"})
             except Exception as e:
-                # 记录异常并继续处理下一个视频
                 log_failed_video(unique_id, str(e))
                 pbar.set_postfix({'Status': f"Error {unique_id}"})
-
             pbar.update(1)
 
-    print("[Backend] Backend processing complete.")
+    print(f"[Backend] Processing with {api_url} complete.")
 
 if __name__ == '__main__':
     try:
@@ -239,20 +246,26 @@ if __name__ == '__main__':
         # 启动前端、字幕提取和后端的独立线程
         #frontend_thread = Thread(target=frontend_process, args=(video_list, frontend_processed_files))
         subtitle_thread = Thread(target=extract_subtitles,daemon=True, args=(video_list, subtitle_processed_files))
-        backend_thread = Thread(target=backend_process, args=(video_list, backend_processed_files))
+        backend_threads = []
+        for api_url in BACKEND_SERVERS:
+            thread = Thread(target=backend_process, args=(video_list, backend_processed_files, api_url))
+            backend_threads.append(thread)
+            thread.start()
 
         #frontend_thread.start()
         subtitle_thread.start()
-        backend_thread.start()
+        #backend_thread.start()
 
         #frontend_thread.join()
         subtitle_thread.join()
-        backend_thread.join()
+        for thread in backend_threads:
+            thread.join()
 
         print("All processing complete.")
     except KeyboardInterrupt:
         print("\n[Main] Interrupt received. Stopping all processes...")
         STOP_EVENT.set()
         subtitle_thread.join()
-        backend_thread.join()
+        for thread in backend_threads:
+            thread.join()
         print("[Main] All processes stopped.")
